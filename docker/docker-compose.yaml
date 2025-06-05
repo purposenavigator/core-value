@@ -1,0 +1,47 @@
+version: '3.9'
+services:
+  frontend:
+    image: self-analyzation-web:latest # ← your built Next.js image
+    ports:
+      - '3000:3000'
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    networks:
+      - app-network
+
+  backend:
+    image: 885416451907.dkr.ecr.us-east-1.amazonaws.com/self-analyzation:host-fargate
+    ports:
+      - '8000:8000'
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      MONGODB_URI: ${MONGODB_URI}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME}
+      SECRET_KEY: ${SECRET_KEY}
+      TOKEN_ALGORITHM: ${TOKEN_ALGORITHM}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+    # Add DNS configuration for MongoDB Atlas connection
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    # Add healthcheck to verify MongoDB connectivity
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import pymongo; pymongo.MongoClient('${MONGODB_URI}').admin.command('ping')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

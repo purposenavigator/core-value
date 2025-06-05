@@ -1,0 +1,63 @@
+version: '3.9'
+services:
+  frontend:
+    image: self-analyzation-web:latest # ← your built Next.js image
+    ports:
+      - '3000:3000'
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    networks:
+      - app-network
+
+  backend:
+    image: 885416451907.dkr.ecr.us-east-1.amazonaws.com/self-analyzation:host-fargate
+    ports:
+      - '8000:8000'
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME}
+      SECRET_KEY: ${SECRET_KEY}
+      TOKEN_ALGORITHM: ${TOKEN_ALGORITHM}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import pymongo; pymongo.MongoClient('mongodb://mongodb:27017').admin.command('ping')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - app-network
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - app-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  app-network:
+    driver: bridge
