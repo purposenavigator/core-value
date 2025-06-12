@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest # Official MongoDB image
+    container_name: mongodb
+    restart: unless-stopped
+    # environment:
+    #   MONGO_INITDB_ROOT_USERNAME: root # MongoDB admin username (change as needed)
+    #   MONGO_INITDB_ROOT_PASSWORD: examplepassword # MongoDB admin password (change as needed)
+    volumes:
+      - mongo_data:/data/db # Persist data with named volume
+    # ports: # Only for development or direct access. Normally via Nginx
+    #   - "27017:27017"
+
+  backend: # FastAPI service
+    build: ./api/docker
+    container_name: fastapi_backend
+    restart: unless-stopped
+    # ports: # Not exposed directly, accessed via Nginx
+    #   - "8000:8000"
+    volumes:
+      - ./api/app:/app # Reflect code changes immediately during development (use COPY in Dockerfile for production)
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME}
+      SECRET_KEY: ${SECRET_KEY}
+      TOKEN_ALGORITHM: ${TOKEN_ALGORITHM}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+    depends_on:
+      - mongodb # Start backend after MongoDB is up
+
+  frontend: # Next.js service
+    build: ./docker # Use the docker directory for the frontend build context (where Dockerfile is located)
+    container_name: nextjs_frontend
+    restart: unless-stopped
+    # ports: # Not exposed directly, accessed via Nginx
+    #   - "3000:3000"
+    volumes:
+      - ./:/app # Reflect code changes immediately during development (use COPY in Dockerfile for production)
+      - /app/node_modules # Prevent mounting host node_modules
+      - /app/.next # Prevent mounting build artifacts
+    environment:
+      NEXT_PUBLIC_API_URL: "/api" # FastAPI endpoint (matches Nginx routing)
+      # Other required environment variables
+    depends_on:
+      - backend # Start frontend after backend is up (if API dependent)
+
+  nginx: # Nginx service
+    build: ./nginx
+    container_name: nginx_reverse_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"   # HTTP
+      - "443:443" # HTTPS (for SSL setup)
+    volumes:
+      # Mount SSL certificates if using (e.g., with Certbot)
+      # - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro # Read-only
+    depends_on:
+      - frontend
+      - backend
+
+volumes: # Named volume definition
+  mongo_data:
