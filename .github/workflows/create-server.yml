@@ -248,8 +248,10 @@ jobs:
               exit 1
             fi
             
+            # Debug: Echo the git clone URL (do NOT do this in production as it exposes your token)
+            echo "GIT CLONE URL: https://x-access-token:${GH_PAT}@github.com/${REPO}.git"
             # Use access token for authentication and clone the specified branch
             git clone -b "${BRANCH}" "https://x-access-token:${GH_PAT}@github.com/${REPO}.git"
             
             echo ">>> All steps complete! Server is ready."
-EOF
+          EOF
