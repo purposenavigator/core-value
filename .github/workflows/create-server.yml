@@ -31,6 +31,14 @@ on:
         description: 'CIDR block allowed for SSH. 0.0.0.0/0 is for Actions runner IP.'
         required: true
         default: '0.0.0.0/0'
+      repository_to_clone:
+        description: 'Repository to clone (e.g., your-username/your-repo-name)'
+        required: true
+        default: 'purposenavigator/core-value'
+      repository_branch:
+        description: 'Branch to clone'
+        required: true
+        default: 'main'
 
 jobs:
   # Job 1: Provision infrastructure (EC2 instance) on AWS
@@ -201,7 +209,11 @@ jobs:
           echo "Waiting for SSH connection to be ready..."
           sleep 30
 
-      - name: Install Docker and Compose via SSH
+      - name: Install Git, Docker, and Clone Repo via SSH
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.event.inputs.repository_to_clone }}
+          BRANCH: ${{ github.event.inputs.repository_branch }}
         run: |
           # Use the public IP from Job 1 to SSH and run installation commands
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa ubuntu@${{ needs.provision_infrastructure.outputs.public_ip }} << 'EOF'
@@ -210,7 +222,7 @@ jobs:
             
             echo ">>> [1/5] Updating package lists..."
             sudo apt-get update -y
-            sudo apt-get install -y ca-certificates curl
+            sudo apt-get install -y ca-certificates curl git
 
             echo ">>> [2/5] Setting up Docker's GPG key and repository..."
             sudo install -m 0755 -d /etc/apt/keyrings
@@ -235,4 +247,15 @@ jobs:
             echo ">>> Docker installation complete!"
             
             # --- Commands above are executed on the EC2 server ---
+
+            echo ">>> [6/6] Cloning repository ${REPO}..."
+            cd /home/ubuntu # Move to the directory where the repository will be cloned
+            # Use access token for authentication and clone the specified branch
+            git clone -b ${BRANCH} https://x-access-token:${GH_PAT}@github.com/${REPO}.git
+            
+            # Change the owner of the cloned directory to the ubuntu user
+            # REPO_DIR_NAME=$(basename ${REPO})
+            # sudo chown -R ubuntu:ubuntu /home/ubuntu/${REPO_DIR_NAME}
+
+            echo ">>> All steps complete! Server is ready."
           EOF
