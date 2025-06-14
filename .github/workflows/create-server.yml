@@ -251,6 +251,7 @@ jobs:
             echo ">>> [6/6] Cloning repository ${REPO}..."
             cd /home/ubuntu # Move to the directory where the repository will be cloned
             # Use access token for authentication and clone the specified branch
+            echo "GIT CLONE URL: https://x-access-token:${GH_PAT}@github.com/${REPO}.git"
             git clone -b ${BRANCH} https://x-access-token:${GH_PAT}@github.com/${REPO}.git
             
             # Change the owner of the cloned directory to the ubuntu user
