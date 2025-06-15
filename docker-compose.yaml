@@ -14,7 +14,9 @@ services:
     #   - "27017:27017"
 
   backend: # FastAPI service
-    build: ./api/docker
+    build:
+      context: ./api
+      dockerfile: docker/Dockerfile
     container_name: fastapi_backend
     restart: unless-stopped
     # ports: # Not exposed directly, accessed via Nginx
