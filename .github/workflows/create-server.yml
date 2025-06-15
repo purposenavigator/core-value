@@ -209,6 +209,14 @@ jobs:
       - name: Install Git, Docker, and Clone Repo via SSH
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
+          # .envファイル用の新しいSecret
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB_NAME: ${{ secrets.MONGODB_DB_NAME }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          TOKEN_ALGORITHM: ${{ secrets.TOKEN_ALGORITHM }}
+          ACCESS_TOKEN_EXPIRE_MINUTES: ${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
+          # ワークフローからの入力
           REPO: ${{ github.event.inputs.repository_to_clone }}
           BRANCH: ${{ github.event.inputs.repository_branch }}
         run: |
@@ -252,6 +260,29 @@ jobs:
             echo "GIT CLONE URL: https://x-access-token:${GH_PAT}@github.com/${REPO}.git"
             # Use access token for authentication and clone the specified branch
             git clone -b "${BRANCH}" "https://x-access-token:${GH_PAT}@github.com/${REPO}.git"
+
+            # ★★★★★ ここからが.envファイルを作成する新しいステップ ★★★★★
+            echo ">>> [6/6] Creating .env file..."
+            
+            # クローンしたリポジトリのディレクトリ名を取得 (例: 'your-repo-name')
+            REPO_DIR_NAME=\$(basename "\${REPO}")
+            
+            # クローンしたディレクトリに移動
+            cd "/home/ubuntu/\${REPO_DIR_NAME}" || { echo "Failed to cd into repo directory"; exit 1; }
+            
+            # catとヒアドキュメントを使い、.envファイルを生成する
+            # ここで使われる変数は、すべてGitHub ActionsのSecretから渡された値に置き換わっている
+            cat << EOT > .env
+            OPENAI_API_KEY=${OPENAI_API_KEY}
+            MONGODB_URI=${MONGODB_URI}
+            MONGODB_DB_NAME=${MONGODB_DB_NAME}
+            SECRET_KEY=${SECRET_KEY}
+            TOKEN_ALGORITHM=${TOKEN_ALGORITHM}
+            ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+            EOT
+
+            echo ".env file created successfully inside \$(pwd)"
+            # ★★★★★ ここまでが新しいステップ ★★★★★
             
             echo ">>> All steps complete! Server is ready."
           EOF
