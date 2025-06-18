@@ -34,7 +34,9 @@ services:
       - mongodb # Start backend after MongoDB is up
 
   frontend: # Next.js service
-    build: ./docker # Use the docker directory for the frontend build context (where Dockerfile is located)
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
     container_name: nextjs_frontend
     restart: unless-stopped
     # ports: # Not exposed directly, accessed via Nginx
