@@ -265,7 +265,7 @@ jobs:
             echo ">>> [6/6] Creating .env file..."
             
             # クローンしたディレクトリに移動する。失敗した場合はエラーで終了する
-            cd "/home/ubuntu/core-value" || { echo "ERROR: Failed to cd into repo directory /home/ubuntu/core-value"; exit 1; }
+            cd "/home/ubuntu/core-value/api" || { echo "ERROR: Failed to cd into repo directory /home/ubuntu/core-value/api"; exit 1; }
             
             echo "Creating .env file in \$(pwd)..."
             
