@@ -264,11 +264,8 @@ jobs:
             # ★★★★★ ここからが.envファイルを作成する修正版のステップ ★★★★★
             echo ">>> [6/6] Creating .env file..."
             
-            # リポジトリのパスからディレクトリ名を取得する (例: 'core-value')
-            REPO_DIR_NAME=\$(basename "\${REPO}")
-            
             # クローンしたディレクトリに移動する。失敗した場合はエラーで終了する
-            cd "/home/ubuntu/\${REPO_DIR_NAME}" || { echo "ERROR: Failed to cd into repo directory /home/ubuntu/\${REPO_DIR_NAME}"; exit 1; }
+            cd "/home/ubuntu/core-value" || { echo "ERROR: Failed to cd into repo directory /home/ubuntu/core-value"; exit 1; }
             
             echo "Creating .env file in \$(pwd)..."
             
