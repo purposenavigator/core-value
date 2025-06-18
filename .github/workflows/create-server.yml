@@ -261,28 +261,28 @@ jobs:
             # Use access token for authentication and clone the specified branch
             git clone -b "${BRANCH}" "https://x-access-token:${GH_PAT}@github.com/${REPO}.git"
 
-            # ★★★★★ ここからが.envファイルを作成する新しいステップ ★★★★★
+            # ★★★★★ ここからが.envファイルを作成する修正版のステップ ★★★★★
             echo ">>> [6/6] Creating .env file..."
             
-            # クローンしたリポジトリのディレクトリ名を取得 (例: 'your-repo-name')
+            # リポジトリのパスからディレクトリ名を取得する (例: 'core-value')
             REPO_DIR_NAME=\$(basename "\${REPO}")
             
-            # クローンしたディレクトリに移動
-            cd "/home/ubuntu/\${REPO_DIR_NAME}" || { echo "Failed to cd into repo directory"; exit 1; }
+            # クローンしたディレクトリに移動する。失敗した場合はエラーで終了する
+            cd "/home/ubuntu/\${REPO_DIR_NAME}" || { echo "ERROR: Failed to cd into repo directory /home/ubuntu/\${REPO_DIR_NAME}"; exit 1; }
             
-            # catとヒアドキュメントを使い、.envファイルを生成する
-            # ここで使われる変数は、すべてGitHub ActionsのSecretから渡された値に置き換わっている
-            cat << EOT > .env
-            OPENAI_API_KEY=${OPENAI_API_KEY}
-            MONGODB_URI=${MONGODB_URI}
-            MONGODB_DB_NAME=${MONGODB_DB_NAME}
-            SECRET_KEY=${SECRET_KEY}
-            TOKEN_ALGORITHM=${TOKEN_ALGORITHM}
-            ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
-            EOT
-
-            echo ".env file created successfully inside \$(pwd)"
-            # ★★★★★ ここまでが新しいステップ ★★★★★
+            echo "Creating .env file in \$(pwd)..."
+            
+            # ネストされたヒアドキュメントの代わりに、一行ずつ `echo` を使ってファイルを作成する
+            # 最初の `>` はファイルを新規作成（または上書き）、次の行からの `>>` は追記を意味する
+            echo "OPENAI_API_KEY=${OPENAI_API_KEY}" > .env
+            echo "MONGODB_URI=${MONGODB_URI}" >> .env
+            echo "MONGODB_DB_NAME=${MONGODB_DB_NAME}" >> .env
+            echo "SECRET_KEY=${SECRET_KEY}" >> .env
+            echo "TOKEN_ALGORITHM=${TOKEN_ALGORITHM}" >> .env
+            echo "ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}" >> .env
+            
+            echo ".env file created successfully."
+            # ★★★★★ ここまでが修正箇所 ★★★★★
             
             echo ">>> All steps complete! Server is ready."
           EOF
