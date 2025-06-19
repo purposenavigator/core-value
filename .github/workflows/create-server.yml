@@ -280,6 +280,16 @@ jobs:
             
             echo ".env file created successfully."
             # ★★★★★ ここまでが修正箇所 ★★★★★
+
+            # ★★★★★ ここからがDocker Composeを起動する新しいステップ ★★★★★
+            echo ">>> [7/7] Starting application with Docker Compose..."
             
-            echo ">>> All steps complete! Server is ready."
+            # -d でバックグラウンド起動、--build でイメージを再ビルドする
+            # sudo を付けて実行するのが確実
+            docker compose up --build
+            
+            echo "Docker Compose services are starting in the background."
+            # ★★★★★ ここまでが新しいステップ ★★★★★
+
+            echo ">>> All steps complete! Server is fully deployed and running."
           EOF
