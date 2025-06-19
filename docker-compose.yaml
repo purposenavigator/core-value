@@ -22,7 +22,7 @@ services:
     # ports: # Not exposed directly, accessed via Nginx
     #   - "8000:8000"
     volumes:
-      - ./api/app:/app # Reflect code changes immediately during development (use COPY in Dockerfile for production)
+    - ./api:/app # Reflect code changes immediately during development (use COPY in Dockerfile for production)
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       MONGODB_URI: mongodb://mongodb:27017
