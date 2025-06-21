@@ -8,7 +8,7 @@ const API_URL =
 console.log('API_URL is:', API_URL);
 
 export const getApiBaseUrl = () => {
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  return "/api"
 };
 
 interface RequestOptions extends RequestInit {
