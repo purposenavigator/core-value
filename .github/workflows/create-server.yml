@@ -26,7 +26,12 @@ on:
       ec2_instance_name_tag:
         description: 'Value for the Name tag of the EC2 instance'
         required: true
-        default: 'my-app-instance'
+        default: 'self-analyzation-instance'
+      # ★ 新しい入力: Elastic IPを識別するためのNameタグ
+      elastic_ip_name_tag:
+        description: 'Value for the Name tag of the Elastic IP address'
+        required: true
+        default: 'self-analyzation-eip'
       ssh_allowed_cidr:
         description: 'CIDR block allowed for SSH. 0.0.0.0/0 is for Actions runner IP.'
         required: true
@@ -44,9 +49,9 @@ jobs:
   # Job 1: Provision infrastructure (EC2 instance) on AWS
   provision_infrastructure:
     runs-on: ubuntu-latest
-    outputs: # Make this job's outputs available to other jobs
+    outputs: # ★ 出力されるIPをElastic IPに変更
       instance_id: ${{ steps.launch_ec2.outputs.INSTANCE_ID }}
-      public_ip: ${{ steps.launch_ec2.outputs.PUBLIC_IP }}
+      public_ip: ${{ steps.associate_eip.outputs.ELASTIC_IP }} # Elastic IPのステップを参照
       security_group_id: ${{ steps.create_sg.outputs.SECURITY_GROUP_ID }}
 
     steps:
@@ -57,7 +62,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ github.event.inputs.aws_region }}
 
-      # (Below: Steps for key pair verification, security group creation, and EC2 instance launch remain unchanged)
+      # (キーペア検証、セキュリティグループ作成のステップは変更なし)
       - name: Verify EC2 Key Pair Existence
         id: verify_key_pair
         run: |
@@ -76,18 +81,13 @@ jobs:
           SG_NAME="${{ github.event.inputs.security_group_name }}"
           AWS_REGION="${{ github.event.inputs.aws_region }}"
           SSH_CIDR="${{ github.event.inputs.ssh_allowed_cidr }}"
-
-          # Attempt to get default VPC ID
           VPC_ID=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query "Vpcs[0].VpcId" --output text --region "$AWS_REGION")
           if [ "$VPC_ID" == "None" ] || [ -z "$VPC_ID" ]; then
-            echo "Error: Default VPC not found in region $AWS_REGION. This script assumes a default VPC exists."
+            echo "Error: Default VPC not found in region $AWS_REGION."
             exit 1
           fi
           echo "Using Default VPC ID: $VPC_ID"
-
-          # Check if security group already exists by name in the default VPC
           SG_ID=$(aws ec2 describe-security-groups --filters Name=group-name,Values="$SG_NAME" Name=vpc-id,Values="$VPC_ID" --query "SecurityGroups[0].GroupId" --output text --region "$AWS_REGION")
-
           if [ "$SG_ID" == "None" ] || [ -z "$SG_ID" ]; then
             echo "Security group '$SG_NAME' not found. Creating it..."
             SG_ID=$(aws ec2 create-security-group \
@@ -97,29 +97,12 @@ jobs:
               --query 'GroupId' --output text \
               --region "$AWS_REGION")
             echo "Security Group '$SG_NAME' created with ID: $SG_ID."
-
             echo "Authorizing ingress rules..."
-            # Allow SSH
-            if ! aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 22 --cidr "$SSH_CIDR" --region "$AWS_REGION" 2>/dev/null; then
-              echo "SSH rule for $SSH_CIDR might already exist or failed to add. Check AWS console."
-            else
-              echo "SSH access allowed from $SSH_CIDR."
-            fi
-            # Allow HTTP
-            if ! aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 80 --cidr "0.0.0.0/0" --region "$AWS_REGION" 2>/dev/null; then
-              echo "HTTP rule might already exist or failed to add."
-            else
-              echo "HTTP access allowed from 0.0.0.0/0."
-            fi
-            # Allow HTTPS
-            if ! aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 443 --cidr "0.0.0.0/0" --region "$AWS_REGION" 2>/dev/null; then
-              echo "HTTPS rule might already exist or failed to add."
-            else
-              echo "HTTPS access allowed from 0.0.0.0/0."
-            fi
+            aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 22 --cidr "$SSH_CIDR" --region "$AWS_REGION"
+            aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 80 --cidr "0.0.0.0/0" --region "$AWS_REGION"
+            aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 443 --cidr "0.0.0.0/0" --region "$AWS_REGION"
           else
             echo "Security group '$SG_NAME' (ID: $SG_ID) already exists. Using existing."
-            # You could add logic here to verify/update rules if needed
           fi
           echo "SECURITY_GROUP_ID=$SG_ID" >> $GITHUB_OUTPUT
 
@@ -128,21 +111,17 @@ jobs:
         run: |
           INSTANCE_NAME_TAG="${{ github.event.inputs.ec2_instance_name_tag }}"
           AWS_REGION="${{ github.event.inputs.aws_region }}"
-          AMI_ID="${{ github.event.inputs.ec2_ami_id }}"
-          INSTANCE_TYPE="${{ github.event.inputs.ec2_instance_type }}"
-          KEY_NAME="${{ github.event.inputs.ec2_key_pair_name }}"
-          SG_ID="${{ steps.create_sg.outputs.SECURITY_GROUP_ID }}"
-
-          # Check if an instance with the given name tag already exists and is not terminated
+          
+          # 冪等性を保つため、指定したNameタグを持つインスタンスが存在しないか確認
           EXISTING_INSTANCE_ID=$(aws ec2 describe-instances \
             --filters "Name=tag:Name,Values=$INSTANCE_NAME_TAG" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
             --query "Reservations[*].Instances[*].InstanceId" \
             --output text --region "$AWS_REGION")
 
           if [ -n "$EXISTING_INSTANCE_ID" ]; then
-            echo "Instance with tag Name=$INSTANCE_NAME_TAG (ID: $EXISTING_INSTANCE_ID) already exists and is not terminated. Using existing."
+            echo "Instance with tag Name=$INSTANCE_NAME_TAG (ID: $EXISTING_INSTANCE_ID) already exists. Using existing."
             INSTANCE_ID="$EXISTING_INSTANCE_ID"
-            # Ensure it's running
+            # 既存インスタンスが停止している場合は起動する
             CURRENT_STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "Reservations[*].Instances[*].State.Name" --output text --region "$AWS_REGION")
             if [ "$CURRENT_STATE" != "running" ] && [ "$CURRENT_STATE" != "pending" ]; then
                 echo "Existing instance $INSTANCE_ID is in state $CURRENT_STATE. Attempting to start it..."
@@ -150,28 +129,23 @@ jobs:
                 aws ec2 wait instance-running --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
                 echo "Instance $INSTANCE_ID started."
             fi
-            PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "Reservations[*].Instances[*].PublicIpAddress" --output text --region "$AWS_REGION")
           else
             echo "Launching new EC2 instance with Name tag: $INSTANCE_NAME_TAG..."
-            # Attempt to get a default subnet ID in the first AZ of the default VPC
             DEFAULT_VPC_ID=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query "Vpcs[0].VpcId" --output text --region "$AWS_REGION")
             SUBNET_ID=$(aws ec2 describe-subnets \
               --filters Name=vpc-id,Values="$DEFAULT_VPC_ID" Name=availability-zone,Values=$(aws ec2 describe-availability-zones --query "AvailabilityZones[0].ZoneName" --output text --region "$AWS_REGION") \
               --query "Subnets[0].SubnetId" --output text --region "$AWS_REGION" 2>/dev/null)
 
-            LAUNCH_ARGS="--image-id $AMI_ID \
-                         --instance-type $INSTANCE_TYPE \
-                         --key-name $KEY_NAME \
-                         --security-group-ids $SG_ID \
+            LAUNCH_ARGS="--image-id ${{ github.event.inputs.ec2_ami_id }} \
+                         --instance-type ${{ github.event.inputs.ec2_instance_type }} \
+                         --key-name ${{ github.event.inputs.ec2_key_pair_name }} \
+                         --security-group-ids ${{ steps.create_sg.outputs.SECURITY_GROUP_ID }} \
                          --tag-specifications ResourceType=instance,Tags=[{Key=Name,Value=$INSTANCE_NAME_TAG}] ResourceType=volume,Tags=[{Key=Name,Value=${INSTANCE_NAME_TAG}-volume}] \
                          --region $AWS_REGION \
                          --query Instances[0].InstanceId --output text"
-
+            
             if [ "$SUBNET_ID" != "None" ] && [ -n "$SUBNET_ID" ]; then
-              echo "Using Subnet ID: $SUBNET_ID"
               LAUNCH_ARGS="$LAUNCH_ARGS --subnet-id $SUBNET_ID"
-            else
-              echo "Warning: Could not automatically determine a specific subnet. EC2 will pick a default subnet in the VPC."
             fi
 
             INSTANCE_ID=$(aws ec2 run-instances $LAUNCH_ARGS)
@@ -179,14 +153,60 @@ jobs:
             echo "Waiting for instance to be in 'running' state..."
             aws ec2 wait instance-running --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
             echo "Instance is now running."
-            PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "Reservations[*].Instances[*].PublicIpAddress" --output text --region "$AWS_REGION")
+          fi
+          
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "EC2 Instance ID: $INSTANCE_ID"
+
+      # ★★★ 新しく追加したステップ: Elastic IPの割り当て ★★★
+      - name: Allocate and Associate Elastic IP
+        id: associate_eip
+        run: |
+          EIP_NAME_TAG="${{ github.event.inputs.elastic_ip_name_tag }}"
+          AWS_REGION="${{ github.event.inputs.aws_region }}"
+          INSTANCE_ID="${{ steps.launch_ec2.outputs.INSTANCE_ID }}"
+
+          echo "Looking for an unassociated Elastic IP with tag Name=$EIP_NAME_TAG"
+          # 指定したタグを持つ、未関連付けのEIPを検索
+          ADDRESS_INFO=$(aws ec2 describe-addresses \
+            --filters "Name=tag:Name,Values=$EIP_NAME_TAG" \
+            --query "Addresses[?AssociationId==null]|[0]" \
+            --output json --region "$AWS_REGION")
+
+          ALLOCATION_ID=$(echo "$ADDRESS_INFO" | jq -r '.AllocationId // empty')
+          PUBLIC_IP=$(echo "$ADDRESS_INFO" | jq -r '.PublicIp // empty')
+
+          if [ -z "$ALLOCATION_ID" ]; then
+            echo "No suitable unassociated Elastic IP found. Allocating a new one..."
+            # 新しいEIPを確保
+            ALLOCATION_ID=$(aws ec2 allocate-address --domain vpc --query 'AllocationId' --output text --region "$AWS_REGION")
+            
+            # タグ付けのために少し待機
+            sleep 5 
+
+            # 新しいEIPにNameタグを付与
+            aws ec2 create-tags --resources "$ALLOCATION_ID" --tags "Key=Name,Value=$EIP_NAME_TAG" --region "$AWS_REGION"
+            
+            PUBLIC_IP=$(aws ec2 describe-addresses --allocation-ids "$ALLOCATION_ID" --query "Addresses[0].PublicIp" --output text --region "$AWS_REGION")
+            echo "Allocated new Elastic IP: $PUBLIC_IP with Allocation ID: $ALLOCATION_ID"
+          else
+            echo "Found existing unassociated Elastic IP: $PUBLIC_IP with Allocation ID: $ALLOCATION_ID"
           fi
 
-          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_OUTPUT
-          echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_OUTPUT
-          echo "EC2 Instance ID: $INSTANCE_ID"
-          echo "EC2 Public IP: $PUBLIC_IP"
+          echo "Associating Elastic IP $PUBLIC_IP with instance $INSTANCE_ID..."
+          # EIPをインスタンスに関連付け
+          aws ec2 associate-address \
+            --instance-id "$INSTANCE_ID" \
+            --allocation-id "$ALLOCATION_ID" \
+            --region "$AWS_REGION"
 
+          echo "Association successful."
+          # 出力としてElastic IPを設定
+          echo "ELASTIC_IP=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "Associated Elastic IP: $PUBLIC_IP"
+
+# (後続のデプロイジョブなどがあれば、ここで `needs: provision_infrastructure` を使い、
+#  `needs.provision_infrastructure.outputs.public_ip` でElastic IPにアクセスできます)
 
   # ★★★★★ このジョブを修正します ★★★★★
   install_software:
