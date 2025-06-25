@@ -14,7 +14,7 @@ on:
       ec2_instance_type:
         description: 'EC2 Instance Type'
         required: true
-        default: 't2.micro'
+        default: 't3.medium'
       ec2_key_pair_name:
         description: 'EC2 Key Pair Name (MUST exist in the AWS region)'
         required: true
