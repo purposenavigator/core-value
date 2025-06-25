@@ -306,7 +306,7 @@ jobs:
             
             # -d でバックグラウンド起動、--build でイメージを再ビルドする
             # sudo を付けて実行するのが確実
-            sudo docker compose up --build
+            sudo docker compose up --build -d
             
             echo "Docker Compose services are starting in the background."
             # ★★★★★ ここまでが新しいステップ ★★★★★
