@@ -1,0 +1,96 @@
+name: Stop Server (Temporary)
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: 'AWS Region where the resources exist'
+        required: true
+        default: 'us-east-1'
+      ec2_instance_name_tag:
+        description: 'Value for the Name tag of the EC2 instance to stop'
+        required: true
+        default: 'self-analyzation-instance'
+      repository_directory_name:
+        description: 'The directory name of the cloned repository on the server'
+        required: true
+        default: 'core-value'
+
+jobs:
+  stop_server_and_services:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ github.event.inputs.aws_region }}
+
+      - name: Find Running EC2 Instance
+        id: find_instance
+        run: |
+          INSTANCE_NAME_TAG="${{ github.event.inputs.ec2_instance_name_tag }}"
+          AWS_REGION="${{ github.event.inputs.aws_region }}"
+
+          echo "Searching for a running instance with tag Name=$INSTANCE_NAME_TAG..."
+
+          INSTANCE_INFO=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$INSTANCE_NAME_TAG" "Name=instance-state-name,Values=running,pending" \
+            --query "Reservations[*].Instances[*].{InstanceId:InstanceId, PublicIp:PublicIpAddress}" \
+            --output json --region "$AWS_REGION")
+
+          INSTANCE_ID=$(echo "$INSTANCE_INFO" | jq -r '.[0][0].InstanceId // empty')
+          PUBLIC_IP=$(echo "$INSTANCE_INFO" | jq -r '.[0][0].PublicIp // empty')
+
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "No running instance found with the specified tag. Nothing to do."
+          else
+            echo "Found running instance:"
+            echo "Instance ID: $INSTANCE_ID"
+            echo "Public IP: $PUBLIC_IP"
+            echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_OUTPUT
+            echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup SSH Key
+        if: steps.find_instance.outputs.INSTANCE_ID != ''
+        run: |
+          mkdir -p ~/.ssh/
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      # ★★★★★ ここが修正箇所 (down -> stop) ★★★★★
+      - name: Stop Docker Compose Services via SSH
+        if: steps.find_instance.outputs.INSTANCE_ID != ''
+        run: |
+          echo "Connecting to ${{ steps.find_instance.outputs.PUBLIC_IP }} to stop Docker services..."
+          REPO_DIR_NAME="${{ github.event.inputs.repository_directory_name }}"
+
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa ubuntu@${{ steps.find_instance.outputs.PUBLIC_IP }} << EOF
+            echo ">>> [1/2] Navigating to repository directory..."
+            cd "/home/ubuntu/${REPO_DIR_NAME}"
+
+            if [ -f "docker-compose.yml" ] || [ -f "docker-compose.yaml" ]; then
+              echo ">>> [2/2] Found docker-compose file. Stopping services with 'sudo docker compose stop'..."
+              sudo docker compose stop
+              echo "Docker services have been stopped. Containers are preserved."
+            else
+              echo "WARNING: Could not find a docker-compose file in $(pwd). Skipping docker stop."
+            fi
+          EOF
+
+      - name: Stop EC2 Instance
+        if: steps.find_instance.outputs.INSTANCE_ID != ''
+        run: |
+          INSTANCE_ID="${{ steps.find_instance.outputs.INSTANCE_ID }}"
+          AWS_REGION="${{ github.event.inputs.aws_region }}"
+          echo "Stopping EC2 instance $INSTANCE_ID..."
+          aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+          echo "Stop command issued for instance $INSTANCE_ID. Waiting for it to enter 'stopped' state..."
+          aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+          echo "Instance $INSTANCE_ID is now stopped. The Elastic IP remains associated."
+
+      # ★★★★★ このステップは削除されました ★★★★★
+      # - name: Disassociate Elastic IP (to prevent charges)
+      #   ...
