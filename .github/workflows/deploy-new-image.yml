@@ -81,49 +81,46 @@ jobs:
           TOKEN_ALGORITHM: ${{ secrets.TOKEN_ALGORITHM }}
           ACCESS_TOKEN_EXPIRE_MINUTES: ${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
           
-          # ワークフローの入力値
-          REPO_DIR: ${{ github.event.inputs.repository_directory }}
-          BRANCH: ${{ github.event.inputs.repository_branch }}
-          
         run: |
           TARGET_IP="${{ needs.find_ec2_ip.outputs.public_ip }}"
           
           echo ">>> Starting deployment to ${TARGET_IP} <<<"
           
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa "ubuntu@${TARGET_IP}" << 'EOF'
+          # ★★★★★ 修正点 1: ヒアドキュメントの 'EOF' を EOF に変更 ★★★★★
+          # これにより、Actions Runnerが ${{...}} の変数を展開できるようになります
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa "ubuntu@${TARGET_IP}" << EOF
             
             # --- ここから下のコマンドはEC2サーバー上で実行されます ---
             
-            REPO_DIR="${{ env.REPO_DIR }}"
-            BRANCH="${{ env.BRANCH }}"
+            # コマンドが失敗したら、すぐにスクリプトを終了させる
+            set -e
 
-            echo ">>> [1/4] Navigating to repository directory: /home/ubuntu/${REPO_DIR}"
-            cd "/home/ubuntu/${REPO_DIR}" || { echo "ERROR: Repository directory not found!"; exit 1; }
+            echo ">>> [1/4] Navigating to repository directory..."
+            # GitHub Actionsの変数を直接展開する
+            cd "/home/ubuntu/${{ github.event.inputs.repository_directory }}" || { echo "ERROR: Repository directory not found!"; exit 1; }
 
-            echo ">>> [2/4] Fetching and pulling latest code from origin/${BRANCH}..."
+            echo ">>> [2/4] Fetching and pulling latest code..."
             git fetch origin
-            git reset --hard "origin/${BRANCH}"
+            git reset --hard "origin/${{ github.event.inputs.repository_branch }}"
             git pull
 
-            APP_ENV_PATH="/home/ubuntu/${REPO_DIR}/api/app" # .envファイルがあるディレクトリ
-            echo ">>> [3/4] Updating .env file at ${APP_ENV_PATH}"
-            cd "${APP_ENV_PATH}" || { echo "ERROR: .env directory not found!"; exit 1; }
+            # ★★★★★ 修正点 2: .envファイル作成方法の変更 ★★★★★
+            echo ">>> [3/4] Updating .env file..."
+            APP_ENV_PATH="/home/ubuntu/${{ github.event.inputs.repository_directory }}/api/app"
+            cd "\$APP_ENV_PATH" || { echo "ERROR: .env directory not found!"; exit 1; }
             
-            cat > .env << 'ENV_FILE'
-            OPENAI_API_KEY=${{ env.OPENAI_API_KEY }}
-            MONGODB_URI=${{ env.MONGODB_URI }}
-            MONGODB_DB_NAME=${{ env.MONGODB_DB_NAME }}
-            SECRET_KEY=${{ env.SECRET_KEY }}
-            TOKEN_ALGORITHM=${{ env.TOKEN_ALGORITHM }}
-            ACCESS_TOKEN_EXPIRE_MINUTES=${{ env.ACCESS_TOKEN_EXPIRE_MINUTES }}
-            ENV_FILE
+            # 確実性の高いechoコマンドで.envファイルを一行ずつ作成する
+            echo "OPENAI_API_KEY=${{ env.OPENAI_API_KEY }}" > .env
+            echo "MONGODB_URI=${{ env.MONGODB_URI }}" >> .env
+            echo "MONGODB_DB_NAME=${{ env.MONGODB_DB_NAME }}" >> .env
+            echo "SECRET_KEY=${{ env.SECRET_KEY }}" >> .env
+            echo "TOKEN_ALGORITHM=${{ env.TOKEN_ALGORITHM }}" >> .env
+            echo "ACCESS_TOKEN_EXPIRE_MINUTES=${{ env.ACCESS_TOKEN_EXPIRE_MINUTES }}" >> .env
             
             echo ".env file updated successfully."
             
-            # --- ここで docker compose pull のステップを削除 ---
-
             echo ">>> [4/4] Rebuilding and restarting Docker Compose services..."
-            cd "/home/ubuntu/${REPO_DIR}" # プロジェクトのルートに戻る
+            cd "/home/ubuntu/${{ github.event.inputs.repository_directory }}" # プロジェクトのルートに戻る
             sudo docker compose up --build -d
 
             echo ">>> Deployment finished successfully! <<<"
