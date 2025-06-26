@@ -1,4 +1,4 @@
-name: Start Docker Compose Services
+name: Start Server and Docker Services
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ on:
         default: 'core-value'
 
 jobs:
-  start_docker_services:
+  start_services:
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS Credentials
@@ -27,69 +27,79 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ github.event.inputs.aws_region }}
 
-      # ステップ2: 指定されたNameタグを持つ「停止中」のEC2インスタンスを検索
       - name: Find Stopped EC2 Instance
         id: find_instance
         run: |
+          # ... (このステップは変更なし)
           INSTANCE_NAME_TAG="${{ github.event.inputs.ec2_instance_name_tag }}"
           AWS_REGION="${{ github.event.inputs.aws_region }}"
-
           echo "Searching for a STOPPED instance with tag Name=$INSTANCE_NAME_TAG..."
-
-          # 'instance-state-name' を 'stopped' に限定して検索
           INSTANCE_ID=$(aws ec2 describe-instances \
             --filters "Name=tag:Name,Values=$INSTANCE_NAME_TAG" "Name=instance-state-name,Values=stopped" \
             --query "Reservations[*].Instances[*].InstanceId" \
             --output text --region "$AWS_REGION")
-
           if [ -z "$INSTANCE_ID" ]; then
-            echo "No stopped instance found with the specified tag. It might be already running or does not exist."
-            # インスタンスが見つからない場合は後続のステップを実行しない
+            echo "No stopped instance found with the specified tag."
             echo "INSTANCE_ID=" >> $GITHUB_OUTPUT
           else
             echo "Found stopped instance with ID: $INSTANCE_ID"
-            # 見つかったインスタンスIDを後続のステップに渡す
             echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_OUTPUT
           fi
 
-      # ステップ3: インスタンスが見つかった場合のみ、EC2を起動
       - name: Start the EC2 Instance
-        # find_instanceステップでINSTANCE_IDが見つかった場合のみこのステップを実行
+        if: steps.find_instance.outputs.INSTANCE_ID != ''
+        run: |
+          # ... (このステップは変更なし)
+          INSTANCE_ID="${{ steps.find_instance.outputs.INSTANCE_ID }}"
+          AWS_REGION="${{ github.event.inputs.aws_region }}"
+          echo "Sending start command to instance $INSTANCE_ID..."
+          aws ec2 start-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+          echo "Waiting for instance $INSTANCE_ID to enter 'running' state..."
+          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+          echo "Instance $INSTANCE_ID is now successfully running."
+
+      # ★★★★★ 修正点1: IPアドレスを取得する新しいステップを追加 ★★★★★
+      - name: Get Instance Public IP
+        id: get_ip
         if: steps.find_instance.outputs.INSTANCE_ID != ''
         run: |
           INSTANCE_ID="${{ steps.find_instance.outputs.INSTANCE_ID }}"
           AWS_REGION="${{ github.event.inputs.aws_region }}"
+          echo "Fetching Public IP for instance $INSTANCE_ID..."
+          PUBLIC_IP=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text --region "$AWS_REGION")
           
-          echo "Sending start command to instance $INSTANCE_ID..."
-          aws ec2 start-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
-          
-          echo "Waiting for instance $INSTANCE_ID to enter 'running' state..."
-          # インスタンスが完全に起動するまで待機
-          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
-          
-          echo "Instance $INSTANCE_ID is now successfully running."
+          if [ -z "$PUBLIC_IP" ] || [ "$PUBLIC_IP" == "None" ]; then
+             echo "Error: Could not retrieve Public IP address for instance $INSTANCE_ID."
+             exit 1
+          fi
+
+          echo "Found Public IP: $PUBLIC_IP"
+          echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_OUTPUT
 
       - name: Setup SSH Key
         if: steps.find_instance.outputs.INSTANCE_ID != ''
         run: |
+          # ... (このステップは変更なし)
           mkdir -p ~/.ssh/
           echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-      # ★★★★★ 'docker compose start' を実行するよう変更 ★★★★★
+      # ★★★★★ 修正点2: 新しいステップの出力を参照するよう変更 ★★★★★
       - name: Start Docker Compose Services via SSH
-        if: steps.find_instance.outputs.INSTANCE_ID != ''
+        # 参照先を 'steps.get_ip.outputs.PUBLIC_IP' に変更
+        if: steps.get_ip.outputs.PUBLIC_IP != ''
         run: |
-          echo "Connecting to ${{ steps.find_instance.outputs.PUBLIC_IP }} to start Docker services..."
+          echo "Connecting to ${{ steps.get_ip.outputs.PUBLIC_IP }} to start Docker services..."
           REPO_DIR_NAME="${{ github.event.inputs.repository_directory_name }}"
 
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa ubuntu@${{ steps.find_instance.outputs.PUBLIC_IP }} << EOF
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa ubuntu@${{ steps.get_ip.outputs.PUBLIC_IP }} << EOF
             echo ">>> [1/2] Navigating to repository directory..."
             cd "/home/ubuntu/${REPO_DIR_NAME}"
-
             if [ -f "docker-compose.yml" ] || [ -f "docker-compose.yaml" ]; then
               echo ">>> [2/2] Found docker-compose file. Starting existing containers with 'sudo docker compose start'..."
-              # 'start' は 'stop' された既存のコンテナを起動するコマンド
               sudo docker compose start
               echo "Docker containers have been started."
             else
