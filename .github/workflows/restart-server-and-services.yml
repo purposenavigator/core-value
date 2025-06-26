@@ -27,33 +27,47 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ github.event.inputs.aws_region }}
 
-      # ★★★★★ 実行中のインスタンスを検索するよう変更 ★★★★★
-      - name: Find Running EC2 Instance and Public IP
+      # ステップ2: 指定されたNameタグを持つ「停止中」のEC2インスタンスを検索
+      - name: Find Stopped EC2 Instance
         id: find_instance
         run: |
           INSTANCE_NAME_TAG="${{ github.event.inputs.ec2_instance_name_tag }}"
           AWS_REGION="${{ github.event.inputs.aws_region }}"
 
-          echo "Searching for a RUNNING instance with tag Name=$INSTANCE_NAME_TAG..."
+          echo "Searching for a STOPPED instance with tag Name=$INSTANCE_NAME_TAG..."
 
-          INSTANCE_INFO=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=$INSTANCE_NAME_TAG" "Name=instance-state-name,Values=running" \
-            --query "Reservations[*].Instances[*].{InstanceId:InstanceId, PublicIp:PublicIpAddress}" \
-            --output json --region "$AWS_REGION")
-
-          INSTANCE_ID=$(echo "$INSTANCE_INFO" | jq -r '.[0][0].InstanceId // empty')
-          PUBLIC_IP=$(echo "$INSTANCE_INFO" | jq -r '.[0][0].PublicIp // empty')
+          # 'instance-state-name' を 'stopped' に限定して検索
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$INSTANCE_NAME_TAG" "Name=instance-state-name,Values=stopped" \
+            --query "Reservations[*].Instances[*].InstanceId" \
+            --output text --region "$AWS_REGION")
 
           if [ -z "$INSTANCE_ID" ]; then
-            echo "Error: No RUNNING instance found with the specified tag. Please ensure the instance is running."
-            exit 1
+            echo "No stopped instance found with the specified tag. It might be already running or does not exist."
+            # インスタンスが見つからない場合は後続のステップを実行しない
+            echo "INSTANCE_ID=" >> $GITHUB_OUTPUT
           else
-            echo "Found running instance:"
-            echo "Instance ID: $INSTANCE_ID"
-            echo "Public IP: $PUBLIC_IP"
+            echo "Found stopped instance with ID: $INSTANCE_ID"
+            # 見つかったインスタンスIDを後続のステップに渡す
             echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_OUTPUT
-            echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_OUTPUT
           fi
+
+      # ステップ3: インスタンスが見つかった場合のみ、EC2を起動
+      - name: Start the EC2 Instance
+        # find_instanceステップでINSTANCE_IDが見つかった場合のみこのステップを実行
+        if: steps.find_instance.outputs.INSTANCE_ID != ''
+        run: |
+          INSTANCE_ID="${{ steps.find_instance.outputs.INSTANCE_ID }}"
+          AWS_REGION="${{ github.event.inputs.aws_region }}"
+          
+          echo "Sending start command to instance $INSTANCE_ID..."
+          aws ec2 start-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+          
+          echo "Waiting for instance $INSTANCE_ID to enter 'running' state..."
+          # インスタンスが完全に起動するまで待機
+          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+          
+          echo "Instance $INSTANCE_ID is now successfully running."
 
       - name: Setup SSH Key
         if: steps.find_instance.outputs.INSTANCE_ID != ''
