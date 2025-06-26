@@ -1,0 +1,84 @@
+name: Start Docker Compose Services
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: 'AWS Region where the instance is running'
+        required: true
+        default: 'us-east-1'
+      ec2_instance_name_tag:
+        description: 'Value for the Name tag of the running EC2 instance'
+        required: true
+        default: 'self-analyzation-instance'
+      repository_directory_name:
+        description: 'The directory name of the cloned repository on the server'
+        required: true
+        default: 'core-value'
+
+jobs:
+  start_docker_services:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ github.event.inputs.aws_region }}
+
+      # ★★★★★ 実行中のインスタンスを検索するよう変更 ★★★★★
+      - name: Find Running EC2 Instance and Public IP
+        id: find_instance
+        run: |
+          INSTANCE_NAME_TAG="${{ github.event.inputs.ec2_instance_name_tag }}"
+          AWS_REGION="${{ github.event.inputs.aws_region }}"
+
+          echo "Searching for a RUNNING instance with tag Name=$INSTANCE_NAME_TAG..."
+
+          INSTANCE_INFO=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$INSTANCE_NAME_TAG" "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].{InstanceId:InstanceId, PublicIp:PublicIpAddress}" \
+            --output json --region "$AWS_REGION")
+
+          INSTANCE_ID=$(echo "$INSTANCE_INFO" | jq -r '.[0][0].InstanceId // empty')
+          PUBLIC_IP=$(echo "$INSTANCE_INFO" | jq -r '.[0][0].PublicIp // empty')
+
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "Error: No RUNNING instance found with the specified tag. Please ensure the instance is running."
+            exit 1
+          else
+            echo "Found running instance:"
+            echo "Instance ID: $INSTANCE_ID"
+            echo "Public IP: $PUBLIC_IP"
+            echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_OUTPUT
+            echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup SSH Key
+        if: steps.find_instance.outputs.INSTANCE_ID != ''
+        run: |
+          mkdir -p ~/.ssh/
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      # ★★★★★ 'docker compose start' を実行するよう変更 ★★★★★
+      - name: Start Docker Compose Services via SSH
+        if: steps.find_instance.outputs.INSTANCE_ID != ''
+        run: |
+          echo "Connecting to ${{ steps.find_instance.outputs.PUBLIC_IP }} to start Docker services..."
+          REPO_DIR_NAME="${{ github.event.inputs.repository_directory_name }}"
+
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa ubuntu@${{ steps.find_instance.outputs.PUBLIC_IP }} << EOF
+            echo ">>> [1/2] Navigating to repository directory..."
+            cd "/home/ubuntu/${REPO_DIR_NAME}"
+
+            if [ -f "docker-compose.yml" ] || [ -f "docker-compose.yaml" ]; then
+              echo ">>> [2/2] Found docker-compose file. Starting existing containers with 'sudo docker compose start'..."
+              # 'start' は 'stop' された既存のコンテナを起動するコマンド
+              sudo docker compose start
+              echo "Docker containers have been started."
+            else
+              echo "WARNING: Could not find a docker-compose file in $(pwd). Skipping docker start."
+            fi
+          EOF
