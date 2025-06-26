@@ -87,7 +87,6 @@ jobs:
           echo ">>> Starting deployment to ${TARGET_IP} <<<"
           
           # ★★★★★ 修正点 1: ヒアドキュメントの 'EOF' を EOF に変更 ★★★★★
-          # これにより、Actions Runnerが ${{...}} の変数を展開できるようになります
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa "ubuntu@${TARGET_IP}" << EOF
             
             # --- ここから下のコマンドはEC2サーバー上で実行されます ---
