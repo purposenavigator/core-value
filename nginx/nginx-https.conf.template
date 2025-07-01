@@ -1,0 +1,49 @@
+# /nginx/nginx-https.conf.template
+
+# --- HTTP to HTTPS Redirect ---
+server {
+    listen 80;
+    server_name ${DOMAIN_NAME};
+
+    # Let's Encryptの更新用
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# --- HTTPS Server ---
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN_NAME};
+
+    # SSL証明書の設定
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem;
+
+    # 推奨されるSSL設定 (オプション)
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # リバースプロキシ設定
+    location /api/ {
+        proxy_pass http://backend:8000/; # docker-compose.ymlのサービス名
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+    }
+
+    location / {
+        proxy_pass http://frontend:3000; # docker-compose.ymlのサービス名
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+    }
+}
