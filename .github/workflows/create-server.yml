@@ -11,9 +11,11 @@ on:
       domain_name:
         description: 'Domain name for HTTPS (e.g., example.com)'
         required: true
+        default: 'core-value.space'
       certbot_email:
         description: "Email for Let's Encrypt notifications"
         required: true
+        default: 'saw@ole.org'
       ec2_instance_type:
         description: 'EC2 Instance Type'
         required: true
