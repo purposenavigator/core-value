@@ -187,21 +187,20 @@ jobs:
         run: |
           # The entire script is sent to the EC2 instance to be executed.
           # Using 'EOF' ensures that variables like $HOME are expanded on the remote server.
-          ssh -o StrictHostKeyChecking=no ubuntu@$PUBLIC_IP 'bash -s' << 'EOF'
+          ssh -o StrictHostKeyChecking=no ubuntu@$PUBLIC_IP 'bash -s' << EOF
             # === This script runs on the EC2 instance ===
 
-            # Exit immediately if a command exits with a non-zero status.
             set -euo pipefail
 
             # --- Environment Variables ---
-            # These are inherited from the `env` block of the GitHub Actions step
             echo ">>> [0/9] Setting up environment variables..."
-            export REPO="${REPO}"
-            export BRANCH="${BRANCH}"
-            export DOMAIN_NAME="${DOMAIN_NAME}"
-            export CERTBOT_EMAIL="${CERTBOT_EMAIL}"
-            export GH_PAT="${GH_PAT}"
-            export APP_DIR="/home/ubuntu/app"
+            REPO="${REPO:-}"
+            BRANCH="${BRANCH:-}"
+            DOMAIN_NAME="${DOMAIN_NAME:-}"
+            CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
+            GH_PAT="${GH_PAT:-}"
+            APP_DIR="/home/ubuntu/app"
+            export REPO BRANCH DOMAIN_NAME CERTBOT_EMAIL GH_PAT APP_DIR
 
             # --- 1. Install Dependencies ---
             echo ">>> [1/9] Installing prerequisites (Git, Docker, Certbot)..."
