@@ -21,6 +21,7 @@ on:
       ec2_key_pair_name:
         description: 'EC2 Key Pair Name (MUST exist in the AWS region)'
         required: true
+        default: 'self-analyzation-key'
       security_group_name:
         description: 'Name for the EC2 Security Group'
         required: true
