@@ -44,10 +44,6 @@ on:
         description: 'Branch to clone'
         required: true
         default: 'main'
-      ec2_ami_id:
-        description: 'Ubuntu 22.04 LTS AMI ID (Verify for your region)'
-        required: true
-        default: 'ami-053b0d53c279acc90' # EXAMPLE: Ubuntu 22.04 LTS for us-east-1
 
 jobs:
   # ===============================================================
