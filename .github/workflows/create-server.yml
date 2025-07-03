@@ -44,6 +44,10 @@ on:
         description: 'Branch to clone'
         required: true
         default: 'main'
+      ec2_ami_id:
+        description: 'Ubuntu 22.04 LTS AMI ID (Verify for your region)'
+        required: true
+        default: 'ami-053b0d53c279acc90' # EXAMPLE: Ubuntu 22.04 LTS for us-east-1
 
 jobs:
   # ===============================================================
@@ -101,7 +105,7 @@ jobs:
           else
             echo "Launching new EC2 instance..."
             INSTANCE_ID=$(aws ec2 run-instances \
-              --image-id "ami-0c55b159cbfafe1f0" # Ubuntu 22.04 LTS (Update AMI for your region)
+              --image-id "${{ github.event.inputs.ec2_ami_id }}" # Use input value for AMI ID
               --instance-type "${{ github.event.inputs.ec2_instance_type }}" \
               --key-name "${{ github.event.inputs.ec2_key_pair_name }}" \
               --security-group-ids "${{ steps.create_sg.outputs.SECURITY_GROUP_ID }}" \
