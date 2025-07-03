@@ -101,7 +101,7 @@ jobs:
           else
             echo "Launching new EC2 instance..."
             INSTANCE_ID=$(aws ec2 run-instances \
-              --image-id "ami-053b0d53c279acc90" # Hardcoded AMI ID
+              --image-id "ami-053b0d53c279acc90" \
               --instance-type "${{ github.event.inputs.ec2_instance_type }}" \
               --key-name "${{ github.event.inputs.ec2_key_pair_name }}" \
               --security-group-ids "${{ steps.create_sg.outputs.SECURITY_GROUP_ID }}" \
