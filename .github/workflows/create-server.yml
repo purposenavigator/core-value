@@ -27,15 +27,15 @@ on:
       security_group_name:
         description: 'Name for the EC2 Security Group'
         required: true
-        default: 'my-app-sg'
+        default: 'self-analyzation'
       ec2_instance_name_tag:
         description: 'Value for the Name tag of the EC2 instance'
         required: true
-        default: 'my-app-instance'
+        default: 'self-analyzation'
       elastic_ip_name_tag:
         description: 'Value for the Name tag of the Elastic IP address'
         required: true
-        default: 'my-app-eip'
+        default: 'self-analyzation-eip'
       repository_to_clone:
         description: 'Repository to clone (e.g., your-username/your-repo)'
         required: true
