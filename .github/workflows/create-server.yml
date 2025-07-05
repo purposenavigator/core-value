@@ -186,21 +186,23 @@ jobs:
           CERTBOT_EMAIL: ${{ github.event.inputs.certbot_email }}
         run: |
           # The entire script is sent to the EC2 instance to be executed.
-          # Using 'EOF' ensures that variables like $HOME are expanded on the remote server.
+          # Using `EOF` (without quotes) ensures that variables from the `env` block are expanded
+          # by the GitHub runner before the script is sent to the remote server.
           ssh -o StrictHostKeyChecking=no ubuntu@$PUBLIC_IP 'bash -s' << EOF
             # === This script runs on the EC2 instance ===
 
+            # Exit immediately if a command exits with a non-zero status.
             set -euo pipefail
 
             # --- Environment Variables ---
+            # These are now correctly expanded by the runner before this script is executed.
             echo ">>> [0/9] Setting up environment variables..."
-            REPO="${REPO:-}"
-            BRANCH="${BRANCH:-}"
-            DOMAIN_NAME="${DOMAIN_NAME:-}"
-            CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
-            GH_PAT="${GH_PAT:-}"
-            APP_DIR="/home/ubuntu/app"
-            export REPO BRANCH DOMAIN_NAME CERTBOT_EMAIL GH_PAT APP_DIR
+            export REPO="${REPO}"
+            export BRANCH="${BRANCH}"
+            export DOMAIN_NAME="${DOMAIN_NAME}"
+            export CERTBOT_EMAIL="${CERTBOT_EMAIL}"
+            export GH_PAT="${GH_PAT}"
+            export APP_DIR="/home/ubuntu/app"
 
             # --- 1. Install Dependencies ---
             echo ">>> [1/9] Installing prerequisites (Git, Docker, Certbot)..."
@@ -210,7 +212,7 @@ jobs:
             sudo install -m 0755 -d /etc/apt/keyrings
             sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
             sudo chmod a+r /etc/apt/keyrings/docker.asc
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
             sudo apt-get update -y
             sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
             # Add ubuntu user to docker group to run docker commands without sudo
@@ -220,15 +222,15 @@ jobs:
 
             # --- 2. Clone or Update Repository ---
             echo ">>> [2/9] Cloning/Updating repository: ${REPO}..."
-            if [ -d "$APP_DIR" ]; then
+            if [ -d "\$APP_DIR" ]; then
               echo "Repository exists. Pulling latest changes..."
-              cd "$APP_DIR"
+              cd "\$APP_DIR"
               git pull origin "${BRANCH}"
             else
               echo "Cloning new repository..."
-              git clone -b "${BRANCH}" "https://x-access-token:${GH_PAT}@github.com/${REPO}.git" "$APP_DIR"
+              git clone -b "${BRANCH}" "https://x-access-token:${GH_PAT}@github.com/${REPO}.git" "\$APP_DIR"
             fi
-            cd "$APP_DIR"
+            cd "\$APP_DIR"
 
             # --- 3. Create .env File ---
             echo ">>> [3/9] Creating .env file for backend..."
@@ -264,9 +266,7 @@ jobs:
               sudo certbot renew
             else
               echo "No certificate found. Obtaining a new one..."
-              # Use --webroot for validation. Certbot will place a file in the webroot,
-              # which our HTTP-only Nginx will serve for Let's Encrypt to validate.
-              sudo certbot certonly --webroot -w "$APP_DIR/certbot/www" \
+              sudo certbot certonly --webroot -w "\$APP_DIR/certbot/www" \
                 --email "${CERTBOT_EMAIL}" \
                 -d "${DOMAIN_NAME}" \
                 --rsa-key-size 4096 \
@@ -276,9 +276,8 @@ jobs:
             
             # Generate dhparam file for stronger security (if it doesn't exist)
             if [ ! -f "./certbot/conf/ssl-dhparams.pem" ]; then
-                sudo openssl dhparam -out "$APP_DIR/certbot/conf/ssl-dhparams.pem" 2048
+                sudo openssl dhparam -out "\$APP_DIR/certbot/conf/ssl-dhparams.pem" 2048
             fi
-
 
             # --- 7. Stop Services ---
             echo ">>> [7/9] Stopping services to apply HTTPS config..."
@@ -288,8 +287,8 @@ jobs:
 
             # --- 8. Switch to HTTPS Nginx Config ---
             echo ">>> [8/9] Switching to HTTPS Nginx configuration..."
-            # Use envsubst to replace ${DOMAIN_NAME} in the template with the actual domain
-            envsubst '${DOMAIN_NAME}' < ./nginx/nginx-https.conf.template > ./nginx/default.conf
+            # Use envsubst to replace \${DOMAIN_NAME} in the template with the actual domain
+            envsubst '\${DOMAIN_NAME}' < ./nginx/nginx-https.conf.template > ./nginx/default.conf
             echo "HTTPS config applied."
 
             # --- 9. Final Relaunch with HTTPS ---
