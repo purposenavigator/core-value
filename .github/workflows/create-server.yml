@@ -234,15 +234,12 @@ jobs:
 
              # --- 3. Create .env File ---
             echo ">>> [3/9] Creating .env file for backend..."
-            # Note: MONGODB_URI is hardcoded to use the Docker network service name
-            cat > ./api/.env << \EOT
-            OPENAI_API_KEY=${OPENAI_API_KEY}
-            MONGODB_URI=mongodb://mongodb:27017
-            MONGODB_DB_NAME=${MONGODB_DB_NAME}
-            SECRET_KEY=${SECRET_KEY}
-            TOKEN_ALGORITHM=${TOKEN_ALGORITHM}
-            ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
-            EOT
+            echo "OPENAI_API_KEY=${OPENAI_API_KEY}" > ./api/.env
+            echo "MONGODB_URI=mongodb://mongodb:27017" >> ./api/.env
+            echo "MONGODB_DB_NAME=${MONGODB_DB_NAME}" >> ./api/.env
+            echo "SECRET_KEY=${SECRET_KEY}" >> ./api/.env
+            echo "TOKEN_ALGORITHM=${TOKEN_ALGORITHM}" >> ./api/.env
+            echo "ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}" >> ./api/.env
             echo ".env file created."
 
             # --- 4. Prepare for HTTPS: Initial Nginx Setup (HTTP only) ---
