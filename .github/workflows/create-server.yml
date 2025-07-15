@@ -291,7 +291,7 @@ jobs:
             # --- 9. Final Relaunch with HTTPS ---
             echo ">>> [9/9] Relaunching services with HTTPS enabled..."
             newgrp docker <<EODocker
-            docker compose up --build -d
+            docker compose up --build
             EODocker
 
             echo "✅ Deployment successful! Your application is running on https://${DOMAIN_NAME}"
