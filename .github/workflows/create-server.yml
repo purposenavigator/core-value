@@ -207,7 +207,7 @@ jobs:
             # --- 1. Install Dependencies ---
             echo ">>> [1/9] Installing prerequisites (Git, Docker, Certbot)..."
             sudo apt-get update -y
-            sudo apt-get install -y ca-certificates curl git gettext-base
+            sudo apt-get install -y ca-certificates curl git gettext-base python3-certbot-nginx
             # Install Docker
             sudo install -m 0755 -d /etc/apt/keyrings
             sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -269,6 +269,7 @@ jobs:
                 --rsa-key-size 4096 \
                 --agree-tos \
                 --non-interactive
+              sudo certbot --nginx -d core-value.space
             fi
             
             # Generate dhparam file for stronger security (if it doesn't exist)
