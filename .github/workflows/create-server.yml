@@ -283,6 +283,9 @@ jobs:
             docker compose down
             EODocker
 
+            echo ">>> [7/9] Stopping Nginx..."
+            sudo systemctl stop nginx
+
             # --- 8. Switch to HTTPS Nginx Config ---
             echo ">>> [8/9] Switching to HTTPS Nginx configuration..."
             # Use envsubst to replace \${DOMAIN_NAME} in the template with the actual domain
