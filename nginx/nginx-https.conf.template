@@ -3,7 +3,7 @@
 # --- HTTP to HTTPS Redirect ---
 server {
     listen 80;
-    server_name ${DOMAIN_NAME};
+    server_name core-value.space;
 
     # Let's Encryptの更新用
     location /.well-known/acme-challenge/ {
@@ -18,11 +18,11 @@ server {
 # --- HTTPS Server ---
 server {
     listen 443 ssl;
-    server_name ${DOMAIN_NAME};
+    server_name core-value.space;
 
     # SSL証明書の設定
-    ssl_certificate /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/core-value.space/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/core-value.space/privkey.pem;
 
     # 推奨されるSSL設定 (オプション)
     include /etc/letsencrypt/options-ssl-nginx.conf;
